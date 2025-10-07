@@ -1,11 +1,28 @@
-HELP.md
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-.class
+# Ignore everything by default
 /*
+
+# Keep src folder (all source code)
+!src/
+!src/**
+
+# Keep Day1-2 and Day3 folders (your notes)
+!Day1-2/
+!Day1-2/**
+!Day3/
+!Day3/**
+
+# Optional: keep Gradle wrapper files
+!gradle/wrapper/gradle-wrapper.jar
+!gradlew
+!gradlew.bat
+
+# Ignore build directories
+/build/
+/out/
+**/build/
+**/bin/
+
+# Ignore IDE specific files
 ### STS ###
 .apt_generated
 .classpath
@@ -14,18 +31,12 @@ build/
 .settings
 .springBeans
 .sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
 
 ### IntelliJ IDEA ###
 .idea
 *.iws
 *.iml
 *.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
 
 ### NetBeans ###
 /nbproject/private/
@@ -37,9 +48,5 @@ out/
 ### VS Code ###
 .vscode/
 
-# Ignore everything
-/*
-
-# But not these folders
-!src/
-!src/**
+# Ignore compiled files
+*.class
