@@ -1,4 +1,4 @@
-package org.transactions.digitalwallettraining.service;
+package org.transactions.digitalwallettraining.validation;
 
 import org.transactions.digitalwallettraining.model.WalletTransaction;
 

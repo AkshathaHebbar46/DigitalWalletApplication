@@ -7,11 +7,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 public class TransactionUtils {
-    public static List<WalletTransaction> filterByType(List<WalletTransaction> transactions, String type) {
-        return transactions.stream()
-                .filter(t -> t.type().equals(type))
-                .toList();
-    }
     public static double totalAmountByType(List<WalletTransaction> transactions, String type) {
         return transactions.stream()
                 .filter(t -> t.type().equals(type))
