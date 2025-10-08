@@ -48,5 +48,11 @@
 ### VS Code ###
 .vscode/
 
-# Ignore compiled files
-*.class
+# Ignore everything else in root
+/*
+# Exclude src folder from ignore (keep it tracked)
+!/src
+# Optional: keep README if you want
+!Day1.pdf
+!Day3.pdf
+
