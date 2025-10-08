@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WalletTransactionTest {
 
-    // ✅ Valid transaction tests
+    // Valid transaction tests
     @Test
     void testValidCreditTransaction() {
         var txn = new WalletTransaction("TXN001", 100.0, "CREDIT", LocalDateTime.now());
@@ -32,7 +32,7 @@ class WalletTransactionTest {
         assertNotNull(txn.timestamp());
     }
 
-    // ✅ Boundary/Edge cases
+    // Boundary/Edge cases
     @Test
     void testMinimalPositiveAmount() {
         var txn = new WalletTransaction("TXN004", Double.MIN_VALUE, "CREDIT", LocalDateTime.now());
@@ -45,7 +45,7 @@ class WalletTransactionTest {
         assertEquals(Double.MAX_VALUE, txn.amount());
     }
 
-    // ❌ Invalid inputs (should throw exceptions)
+    // Invalid inputs (should throw exceptions)
     @Test
     void testNullTransactionId() {
         var exception = assertThrows(IllegalArgumentException.class,

@@ -130,10 +130,10 @@ class TransactionControllerTest {
         mockMvc.perform(post("/transactions/process")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request))
-                .andExpect(status().isOk())
-                .andExpect(content().string("Transactions processed successfully!"));
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string("Provide valid transaction details!"));
 
-        verify(walletService, times(1)).process(anyList());
+        verify(walletService, never()).process(anyList());
     }
 
     @Test

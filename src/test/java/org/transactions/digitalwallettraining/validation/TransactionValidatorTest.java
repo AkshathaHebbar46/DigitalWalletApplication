@@ -26,7 +26,7 @@ class TransactionValidatorTest {
     void testNegativeAmountTransaction() {
         var exception = assertThrows(IllegalArgumentException.class,
                 () -> new WalletTransaction("TXN999", -100, "CREDIT", LocalDateTime.now()));
-        assertEquals("amount cannot be negative", exception.getMessage());
+        assertEquals("amount cannot be zero or negative", exception.getMessage());
     }
     @Test
     void testNonTransactionObject() {

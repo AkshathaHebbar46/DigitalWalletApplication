@@ -53,7 +53,7 @@ class TransactionProcessorTest {
         // Test that creating a transaction with negative amount throws an exception
         var exception = assertThrows(IllegalArgumentException.class,
                 () -> new WalletTransaction("TXN003", -10, "CREDIT", LocalDateTime.now()));
-        assertEquals("amount cannot be negative", exception.getMessage());
+        assertEquals("amount cannot be zero or negative", exception.getMessage());
 
         // Valid transaction should still work
         assertDoesNotThrow(() -> new WalletTransaction("TXN004", 50, "DEBIT", LocalDateTime.now()));
@@ -64,7 +64,7 @@ class TransactionProcessorTest {
     @Test
     void testProcessLargeList() {
         List<WalletTransaction> transactions = new ArrayList<>();
-        for (int i = 1; i <= 1000; i++) {
+        for (int i = 1; i <= 10000; i++) {
             transactions.add(new WalletTransaction(
                     "TXN" + i,
                     i,  // amount
@@ -143,11 +143,11 @@ class TransactionProcessorTest {
         // Invalid transactions (amount negative)
         var ex1 = assertThrows(IllegalArgumentException.class,
                 () -> new WalletTransaction("TXN101", -10, "CREDIT", LocalDateTime.now()));
-        assertEquals("amount cannot be negative", ex1.getMessage());
+        assertEquals("amount cannot be zero or negative", ex1.getMessage());
 
         var ex2 = assertThrows(IllegalArgumentException.class,
                 () -> new WalletTransaction("TXN102", -20, "DEBIT", LocalDateTime.now()));
-        assertEquals("amount cannot be negative", ex2.getMessage());
+        assertEquals("amount cannot be zero or negative", ex2.getMessage());
 
         // Valid transactions
         WalletTransaction txn1 = new WalletTransaction("TXN103", 50, "CREDIT", LocalDateTime.now());

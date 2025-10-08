@@ -52,7 +52,6 @@ class WalletServiceTest {
 
         walletService.process(transactions);
 
-        // The internal list remains empty (current implementation)
         assertEquals(1, walletService.countActiveTransactions());
     }
 
@@ -76,7 +75,7 @@ class WalletServiceTest {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
                 () -> new WalletTransaction("TXN101", -10, "CREDIT", LocalDateTime.now())
         );
-        assertEquals("amount cannot be negative", exception.getMessage());
+        assertEquals("amount cannot be zero or negative", exception.getMessage());
 
         // Process only valid transactions
         List<WalletTransaction> validTransactions = List.of(
@@ -91,11 +90,16 @@ class WalletServiceTest {
 
 
     @Test
-    void testProcessZeroAmountTransaction() {
-        List<WalletTransaction> txns = List.of(
-                new WalletTransaction("TXN103", 0, "CREDIT", LocalDateTime.now())
-        );
-        walletService.process(txns);
-        assertEquals(1, walletService.countActiveTransactions());
+    void testProcessZeroAmountTransactionThrowsException() {
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            List<WalletTransaction> txns = List.of(
+                    new WalletTransaction("TXN103", 0, "CREDIT", LocalDateTime.now())
+            );
+            walletService.process(txns);
+        });
+
+        assertEquals("amount cannot be zero or negative", exception.getMessage());
     }
+
+
 }

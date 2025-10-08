@@ -53,19 +53,16 @@ class TransactionUtilsTest {
 
     // Transactions with zero amount (boundary case)
     @Test
-    void testZeroAmountTransactions() {
-        List<WalletTransaction> transactions = List.of(
-                new WalletTransaction("TXN010", 0, "CREDIT", LocalDateTime.now()),
-                new WalletTransaction("TXN011", 0, "DEBIT", LocalDateTime.now())
-        );
+    void testZeroAmountTransactionThrowsException() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new WalletTransaction("TXN010", 0, "CREDIT", LocalDateTime.now());
+        });
 
-        assertEquals(0, TransactionUtils.totalAmountByType(transactions, "CREDIT"));
-        assertEquals(0, TransactionUtils.totalAmountByType(transactions, "DEBIT"));
-
-        Map<String, List<WalletTransaction>> grouped = TransactionUtils.groupByType(transactions);
-        assertEquals(1, grouped.get("CREDIT").size());
-        assertEquals(1, grouped.get("DEBIT").size());
+        assertThrows(IllegalArgumentException.class, () -> {
+            new WalletTransaction("TXN011", 0, "DEBIT", LocalDateTime.now());
+        });
     }
+
 
     // Transactions with only one type present
     @Test
