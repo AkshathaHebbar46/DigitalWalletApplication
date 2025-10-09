@@ -9,6 +9,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.LongStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,21 +63,28 @@ class TransactionProcessorTest {
     }
 
 
-    // Large list of transactions
     @Test
-    void testProcessLargeList() {
-        List<WalletTransaction> transactions = new ArrayList<>();
-        for (int i = 1; i <= 10000; i++) {
-            transactions.add(new WalletTransaction(
-                    "TXN" + i,
-                    i,  // amount
-                    i % 2 == 0 ? "CREDIT" : "DEBIT",
-                    LocalDateTime.now()
-            ));
-        }
+    void testProcessHugeListInBatches() {
         TransactionProcessor processor = new TransactionProcessor();
-        assertDoesNotThrow(() -> processor.processTransactions(transactions));
+        long totalTransactions = 100_000_000;
+        long batchSize = 1_000_000;
+
+        for (long start = 1; start <= totalTransactions; start += batchSize) {
+            long end = Math.min(start + batchSize - 1, totalTransactions);
+            List<WalletTransaction> batch = LongStream.rangeClosed(start, end)
+                    .mapToObj(i -> new WalletTransaction(
+                            "TXN" + i,
+                            i,
+                            i % 2 == 0 ? "CREDIT" : "DEBIT",
+                            LocalDateTime.now()
+                    ))
+                    .collect(Collectors.toList());
+
+            // Process each batch safely
+            assertDoesNotThrow(() -> processor.processTransactions(batch));
+        }
     }
+
 
     // Single transaction
     @Test
