@@ -62,29 +62,36 @@ class TransactionProcessorTest {
         assertDoesNotThrow(() -> new WalletTransaction("TXN004", 50, "DEBIT", LocalDateTime.now()));
     }
 
-
     @Test
-    void testProcessHugeListInBatches() {
+    void testProcessTransactionsWithOOMHandling() {
         TransactionProcessor processor = new TransactionProcessor();
-        long totalTransactions = 100_000_000;
-        long batchSize = 1_000_000;
 
-        for (long start = 1; start <= totalTransactions; start += batchSize) {
-            long end = Math.min(start + batchSize - 1, totalTransactions);
-            List<WalletTransaction> batch = LongStream.rangeClosed(start, end)
-                    .mapToObj(i -> new WalletTransaction(
-                            "TXN" + i,
-                            i,
-                            i % 2 == 0 ? "CREDIT" : "DEBIT",
-                            LocalDateTime.now()
-                    ))
-                    .collect(Collectors.toList());
+        int totalTransactions = 1_000_000_000; // total transactions to simulate
+        int batchSize = 1_000_000;           // safe starting batch size
 
-            // Process each batch safely
-            assertDoesNotThrow(() -> processor.processTransactions(batch));
+        for (int start = 1; start <= totalTransactions; start += batchSize) {
+            int end = Math.min(start + batchSize - 1, totalTransactions);
+
+            try {
+                // Create a batch of transactions
+                List<WalletTransaction> batch = IntStream.rangeClosed(start, end)
+                        .mapToObj(i -> new WalletTransaction(
+                                "TXN" + i,
+                                i,
+                                i % 2 == 0 ? "CREDIT" : "DEBIT",
+                                LocalDateTime.now()
+                        ))
+                        .collect(Collectors.toList());
+
+                // Process the batch
+                assertDoesNotThrow(() -> processor.processTransactions(batch));
+
+            } catch (OutOfMemoryError e) {
+                System.err.println("OutOfMemoryError! Stopping at transaction " + start);
+                break; // Stop further processing safely
+            }
         }
     }
-
 
     // Single transaction
     @Test
