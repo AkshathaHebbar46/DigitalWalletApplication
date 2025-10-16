@@ -19,39 +19,53 @@ public class WalletEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // --- Relationship: Wallet belongs to a user ---
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private UserEntity user;
 
-    // --- Relationship: Wallet has many transactions ---
-    @OneToMany(mappedBy = "wallet", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "wallet", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TransactionEntity> transactions = new ArrayList<>();
 
     // Constructors
-    public WalletEntity() {}
+    public WalletEntity() { this.balance = 0.0; }
+
+    public WalletEntity(UserEntity user) {
+        this.user = user;
+        this.balance = 0.0;
+    }
+
     public WalletEntity(UserEntity user, Double balance) {
         this.user = user;
+        this.balance = balance != null && balance >= 0 ? balance : 0.0;
+    }
+
+    // Relationship helpers
+    public void addTransaction(TransactionEntity t) {
+        transactions.add(t);
+        t.setWallet(this);
+    }
+
+    public void removeTransaction(TransactionEntity t) {
+        transactions.remove(t);
+        t.setWallet(null);
+    }
+
+    // Getters & setters
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public Double getBalance() { return balance; }
+    public void setBalance(Double balance) {
+        if (balance < 0) throw new IllegalArgumentException("Balance cannot be negative");
         this.balance = balance;
     }
 
-    // Helper methods
-    public void addTransaction(TransactionEntity transaction) {
-        transactions.add(transaction);
-        transaction.setWallet(this);
-    }
-
-    public void removeTransaction(TransactionEntity transaction) {
-        transactions.remove(transaction);
-        transaction.setWallet(null);
-    }
-
-    // Getters and setters
-    public Long getId() { return id; }
-    public Double getBalance() { return balance; }
-    public void setBalance(Double balance) { this.balance = balance; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
     public UserEntity getUser() { return user; }
     public void setUser(UserEntity user) { this.user = user; }
+
     public List<TransactionEntity> getTransactions() { return transactions; }
+    public void setTransactions(List<TransactionEntity> transactions) { this.transactions = transactions; }
 }

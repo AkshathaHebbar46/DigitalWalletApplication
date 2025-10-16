@@ -19,24 +19,28 @@ public class UserEntity {
     @Column(nullable = false, unique = true)
     private String email;
 
+    @Column(nullable = false)
+    private Integer age;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    // --- Relationship: User has many wallets ---
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<WalletEntity> wallets = new ArrayList<>();
 
     // Constructors
     public UserEntity() {}
-    public UserEntity(String name, String email) {
+
+    public UserEntity(String name, String email, Integer age) {
         this.name = name;
         this.email = email;
+        this.age = age;
     }
 
-    // --- Helper method to add wallet ---
+    // Relationship helpers
     public void addWallet(WalletEntity wallet) {
         wallets.add(wallet);
-        wallet.setUser(this);
+        wallet.setUser(this); // maintain bidirectional relationship
     }
 
     public void removeWallet(WalletEntity wallet) {
@@ -50,6 +54,12 @@ public class UserEntity {
     public void setName(String name) { this.name = name; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+    public Integer getAge() { return age; }
+    public void setAge(Integer age) { this.age = age; }
     public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
     public List<WalletEntity> getWallets() { return wallets; }
+    public void setWallets(List<WalletEntity> wallets) { this.wallets = wallets; }
 }

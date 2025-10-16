@@ -7,8 +7,6 @@ import java.time.LocalDateTime;
 @Table(name = "transactions")
 public class TransactionEntity {
 
-    public enum TransactionType { CREDIT, DEBIT }
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -24,30 +22,52 @@ public class TransactionEntity {
     @Column(nullable = false)
     private Double amount;
 
+    @Column(nullable = false)
+    private String description;
+
     @Column(name = "transaction_date")
     private LocalDateTime transactionDate = LocalDateTime.now();
 
-    @Column(length = 255)
-    private String description;
+    @Column
+    private String transactionId;
 
-    // Constructors
+
     public TransactionEntity() {}
+
+    // Constructor for integration tests
     public TransactionEntity(WalletEntity wallet, TransactionType type, Double amount, String description) {
         this.wallet = wallet;
         this.type = type;
-        this.amount = amount;
+        setAmount(amount);
         this.description = description;
+        this.transactionDate = LocalDateTime.now();
     }
 
     // Getters and setters
     public Long getId() { return id; }
     public WalletEntity getWallet() { return wallet; }
+
+
+    public Double getAmount() {
+        return amount;
+    }
+
+    // Setter with validation
+    public void setAmount(Double amount) {
+        if (amount == null || amount <= 0) {
+            throw new IllegalArgumentException("Transaction amount must be greater than zero");
+        }
+        this.amount = amount;
+    }
+
+
     public void setWallet(WalletEntity wallet) { this.wallet = wallet; }
     public TransactionType getType() { return type; }
     public void setType(TransactionType type) { this.type = type; }
-    public Double getAmount() { return amount; }
-    public void setAmount(Double amount) { this.amount = amount; }
-    public LocalDateTime getTransactionDate() { return transactionDate; }
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public LocalDateTime getTransactionDate() { return transactionDate; }
+    public void setTransactionDate(LocalDateTime transactionDate) { this.transactionDate = transactionDate; }
 }

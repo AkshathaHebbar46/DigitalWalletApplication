@@ -1,46 +1,67 @@
 package org.transactions.digitalwallettraining.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.transactions.digitalwallettraining.config.WalletProperties;
-import org.transactions.digitalwallettraining.model.WalletTransaction;
+import org.transactions.digitalwallettraining.dto.*;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 @Service
 public class WalletService {
 
-    private final TransactionProcessor transactionProcessor;
-    private final WalletProperties walletProperties;
+    private final Map<Long, WalletResponseDTO> wallets = new HashMap<>();
+    private final Map<Long, List<WalletTransactionResponseDTO>> transactions = new HashMap<>();
+    private Long walletCounter = 1L;
 
-    private final List<WalletTransaction> transactions = new ArrayList<>();
-
-    @Autowired
-    public WalletService(TransactionProcessor transactionProcessor, WalletProperties walletProperties) {
-        this.transactionProcessor = transactionProcessor;
-        this.walletProperties = walletProperties;
+    // Create a wallet
+    public WalletResponseDTO createWallet(WalletRequestDTO request) {
+        Long walletId = walletCounter++;
+        WalletResponseDTO wallet = new WalletResponseDTO(walletId, request.getUserId(), request.getBalance());
+        wallets.put(walletId, wallet);
+        transactions.put(walletId, new ArrayList<>());
+        return wallet;
     }
 
-    public void process(List<WalletTransaction> transactions) {
-        if (transactions == null) {
-            throw new NullPointerException("Transaction list cannot be null");
+    // Get wallet balance
+    public Double getBalance(Long walletId) {
+        WalletResponseDTO wallet = wallets.get(walletId);
+        if (wallet == null) throw new NoSuchElementException("Wallet not found");
+        return wallet.getBalance();
+    }
+
+    // Process a transaction
+    public WalletTransactionResponseDTO processTransaction(Long walletId, WalletTransactionRequestDTO request) {
+        WalletResponseDTO wallet = wallets.get(walletId);
+        if (wallet == null) throw new NoSuchElementException("Wallet not found");
+
+        Double amount = request.amount();
+        String type = request.type().toUpperCase();
+
+        if ("CREDIT".equals(type)) {
+            wallet.setBalance(wallet.getBalance() + amount);
+        } else if ("DEBIT".equals(type)) {
+            if (wallet.getBalance() < amount) {
+                throw new IllegalArgumentException("Insufficient wallet balance");
+            }
+            wallet.setBalance(wallet.getBalance() - amount);
+        } else {
+            throw new IllegalArgumentException("Transaction type must be CREDIT or DEBIT");
         }
 
-        List<WalletTransaction> validTransactions = transactions.stream()
-                .filter(t -> t.amount() >= walletProperties.getMinAmount() &&
-                        t.amount() <= walletProperties.getMaxAmount())
-                .toList();
+        WalletTransactionResponseDTO response = new WalletTransactionResponseDTO(
+                request.transactionId(),
+                request.amount(),
+                request.type(),
+                null,
+                request.description()
+        );
 
-        transactionProcessor.processTransactions(validTransactions);
-        this.transactions.addAll(validTransactions);
+        transactions.get(walletId).add(response);
+        return response;
     }
 
-    public int countActiveTransactions() {
-        return transactions.size();
-    }
-
-    public void clearTransactions() {
-        this.transactions.clear();
+    // List transactions
+    public List<WalletTransactionResponseDTO> listTransactions(Long walletId) {
+        if (!transactions.containsKey(walletId)) throw new NoSuchElementException("Wallet not found");
+        return transactions.get(walletId);
     }
 }

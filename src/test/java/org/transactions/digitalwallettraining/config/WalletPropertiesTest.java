@@ -4,7 +4,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.transactions.digitalwallettraining.model.WalletTransaction;
+import org.transactions.digitalwallettraining.dto.WalletTransactionRequestDTO;
+import org.transactions.digitalwallettraining.dto.WalletTransactionResponseDTO;
+import org.transactions.digitalwallettraining.dto.WalletRequestDTO;
+import org.transactions.digitalwallettraining.dto.WalletResponseDTO;
+import org.transactions.digitalwallettraining.entity.UserEntity;
+import org.transactions.digitalwallettraining.repository.UserRepository;
 import org.transactions.digitalwallettraining.service.WalletService;
 
 import java.time.LocalDateTime;
@@ -18,61 +23,77 @@ class WalletPropertiesTest {
     @Autowired
     private WalletService walletService;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    private WalletResponseDTO wallet;
+
     @BeforeEach
-    void resetWalletService() throws Exception {
-        // Use reflection to clear the private transactions list before each test
-        var field = WalletService.class.getDeclaredField("transactions");
-        field.setAccessible(true);
-        ((List<?>) field.get(walletService)).clear();
+    void setupWallet() {
+        // Create a test user
+        UserEntity user = new UserEntity("TestUser", "testuser@example.com", 25);
+        userRepository.save(user);
+
+        // Create a test wallet with some initial balance
+        WalletRequestDTO walletDto = new WalletRequestDTO(user.getId(), 1000.0);
+        wallet = walletService.createWallet(walletDto);
     }
 
     @Test
-    void testTransactionsWithinMinMaxPass() {
-        List<WalletTransaction> txns = List.of(
-                new WalletTransaction("TXN001", 1, "CREDIT", LocalDateTime.now()),
-                new WalletTransaction("TXN002", 50000, "DEBIT", LocalDateTime.now())
+    void testValidTransactionsPass() {
+        List<WalletTransactionRequestDTO> txns = List.of(
+                new WalletTransactionRequestDTO("TXN001", 100.0, "CREDIT", "Salary"),
+                new WalletTransactionRequestDTO("TXN002", 50.0, "DEBIT", "Groceries")
         );
 
-        walletService.process(txns);
+        txns.forEach(tx -> walletService.processTransaction(wallet.getWalletId(), tx));
 
-        assertEquals(2, walletService.countActiveTransactions());
+        List<WalletTransactionResponseDTO> processed = walletService.listTransactions(wallet.getWalletId());
+        assertEquals(2, processed.size());
     }
 
     @Test
-    void testTransactionsBelowMinOrAboveMaxFail() {
-        List<WalletTransaction> txns = List.of(
-                new WalletTransaction("TXN003", 0.5, "CREDIT", LocalDateTime.now()),
-                new WalletTransaction("TXN004", 60000, "DEBIT", LocalDateTime.now()),
-                new WalletTransaction("TXN005", 100, "CREDIT", LocalDateTime.now())
+    void testTransactionExceedingBalanceFails() {
+        List<WalletTransactionRequestDTO> txns = List.of(
+                new WalletTransactionRequestDTO("TXN003", 5000.0, "DEBIT", "Rent")
         );
 
-        walletService.process(txns);
-
-        assertEquals(1, walletService.countActiveTransactions());
+        assertThrows(IllegalArgumentException.class, () ->
+                txns.forEach(tx -> walletService.processTransaction(wallet.getWalletId(), tx))
+        );
     }
 
     @Test
     void testMultipleValidTransactionsPass() {
-        List<WalletTransaction> txns = List.of(
-                new WalletTransaction("TXN006", 10, "CREDIT", LocalDateTime.now()),
-                new WalletTransaction("TXN007", 5000, "DEBIT", LocalDateTime.now()),
-                new WalletTransaction("TXN008", 30000, "CREDIT", LocalDateTime.now())
+        List<WalletTransactionRequestDTO> txns = List.of(
+                new WalletTransactionRequestDTO("TXN004", 200.0, "CREDIT",  "Bonus"),
+                new WalletTransactionRequestDTO("TXN005", 150.0, "DEBIT", "Shopping"),
+                new WalletTransactionRequestDTO("TXN006", 300.0, "CREDIT", "Gift")
         );
 
-        walletService.process(txns);
+        txns.forEach(tx -> walletService.processTransaction(wallet.getWalletId(), tx));
 
-        assertEquals(3, walletService.countActiveTransactions());
-    }
-
-    @Test
-    void testNullTransactionListThrowsException() {
-        assertThrows(NullPointerException.class, () -> walletService.process(null));
+        List<WalletTransactionResponseDTO> processed = walletService.listTransactions(wallet.getWalletId());
+        assertEquals(3, processed.size());
     }
 
     @Test
     void testTransactionWithZeroAmountThrowsException() {
-        assertThrows(IllegalArgumentException.class, () ->
-                new WalletTransaction("TXN009", 0, "CREDIT", LocalDateTime.now())
+        WalletTransactionRequestDTO tx = new WalletTransactionRequestDTO(
+                "TXN007", 0.0, "CREDIT", "Invalid"
         );
+
+        assertThrows(IllegalArgumentException.class,
+                () -> walletService.processTransaction(wallet.getWalletId(), tx));
+    }
+
+    @Test
+    void testTransactionWithNegativeAmountThrowsException() {
+        WalletTransactionRequestDTO tx = new WalletTransactionRequestDTO(
+                "TXN008", -50.0, "DEBIT",  "Invalid"
+        );
+
+        assertThrows(IllegalArgumentException.class,
+                () -> walletService.processTransaction(wallet.getWalletId(), tx));
     }
 }

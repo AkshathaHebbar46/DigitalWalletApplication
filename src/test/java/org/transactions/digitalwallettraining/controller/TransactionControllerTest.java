@@ -1,14 +1,19 @@
 package org.transactions.digitalwallettraining.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.transactions.digitalwallettraining.dto.WalletTransactionRequestDTO;
+import org.transactions.digitalwallettraining.dto.WalletTransactionResponseDTO;
 import org.transactions.digitalwallettraining.service.WalletService;
 
-import static org.mockito.ArgumentMatchers.anyList;
+import java.time.LocalDateTime;
+import java.util.List;
+
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -19,157 +24,63 @@ class TransactionControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockitoBean
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
     private WalletService walletService;
 
-    // HEALTH CHECK – Normal case
     @Test
     void testHealthEndpointReturnsValidResponse() throws Exception {
-        when(walletService.countActiveTransactions()).thenReturn(5);
+        WalletTransactionResponseDTO txn1 = new WalletTransactionResponseDTO("TXN001", 100.0, "CREDIT", LocalDateTime.now(), "Salary");
+        WalletTransactionResponseDTO txn2 = new WalletTransactionResponseDTO("TXN002", 50.0, "DEBIT", LocalDateTime.now(), "Groceries");
 
-        mockMvc.perform(get("/transactions/health"))
+        when(walletService.listTransactions(1L)).thenReturn(List.of(txn1, txn2));
+
+        mockMvc.perform(get("/wallets/1/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"))
-                .andExpect(jsonPath("$.activeTransactions").value(5))
+                .andExpect(jsonPath("$.activeTransactions").value(2))
                 .andExpect(jsonPath("$.timestamp").exists());
     }
 
-    // HEALTH CHECK – Boundary case (0 transactions)
-    @Test
-    void testHealthEndpointWhenNoTransactions() throws Exception {
-        when(walletService.countActiveTransactions()).thenReturn(0);
-
-        mockMvc.perform(get("/transactions/health"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.activeTransactions").value(0));
-    }
-
-    // PROCESS – Valid single transaction
     @Test
     void testProcessSingleTransactionSuccess() throws Exception {
-        String request = """
-                [
-                    {"transactionId": "TXN001", "amount": 100.0, "type": "CREDIT", "timestamp": "2025-10-07T10:00:00"}
-                ]
-                """;
+        WalletTransactionRequestDTO requestDTO = new WalletTransactionRequestDTO(
+                "TXN001", 100.0, "CREDIT",  "Salary"
+        );
 
-        mockMvc.perform(post("/transactions/process")
+        WalletTransactionResponseDTO responseDTO = new WalletTransactionResponseDTO(
+                "TXN001", 100.0, "CREDIT", LocalDateTime.now(), "Salary"
+        );
+
+        when(walletService.processTransaction(eq(1L), any(WalletTransactionRequestDTO.class)))
+                .thenReturn(responseDTO);
+
+        mockMvc.perform(post("/wallets/1/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
+                        .content(objectMapper.writeValueAsString(requestDTO)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.transactionId").value("TXN001"))
+                .andExpect(jsonPath("$.amount").value(100.0))
+                .andExpect(jsonPath("$.type").value("CREDIT"));
+
+        verify(walletService, times(1)).processTransaction(eq(1L), any(WalletTransactionRequestDTO.class));
+    }
+
+    @Test
+    void testListTransactions() throws Exception {
+        WalletTransactionResponseDTO txn1 = new WalletTransactionResponseDTO("TXN001", 100.0, "CREDIT", LocalDateTime.now(), "Salary");
+        WalletTransactionResponseDTO txn2 = new WalletTransactionResponseDTO("TXN002", 50.0, "DEBIT", LocalDateTime.now(), "Groceries");
+
+        when(walletService.listTransactions(1L)).thenReturn(List.of(txn1, txn2));
+
+        mockMvc.perform(get("/wallets/1/transactions"))
                 .andExpect(status().isOk())
-                .andExpect(content().string("Transactions processed successfully!"));
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].transactionId").value("TXN001"))
+                .andExpect(jsonPath("$[1].transactionId").value("TXN002"));
 
-        verify(walletService, times(1)).process(anyList());
-    }
-
-    // PROCESS – Multiple transactions (normal case)
-    @Test
-    void testProcessMultipleTransactions() throws Exception {
-        String request = """
-                [
-                    {"transactionId": "TXN001", "amount": 50.0, "type": "DEBIT", "timestamp": "2025-10-07T10:00:00"},
-                    {"transactionId": "TXN002", "amount": 100.0, "type": "CREDIT", "timestamp": "2025-10-07T11:00:00"}
-                ]
-                """;
-
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isOk())
-                .andExpect(content().string("Transactions processed successfully!"));
-
-        verify(walletService, times(1)).process(anyList());
-    }
-
-    // PROCESS – Empty list (boundary case)
-    @Test
-    void testProcessEmptyTransactionList() throws Exception {
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("[]"))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string("No transactions provided!"));
-
-        verify(walletService, never()).process(anyList());
-    }
-
-    @Test
-    void testProcessNullRequestBody() throws Exception {
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("null")) // explicitly null
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string("Provide valid transaction details!"));
-
-        verify(walletService, never()).process(anyList());
-    }
-
-    // PROCESS – Invalid JSON structure (error case)
-    @Test
-    void testProcessMalformedJson() throws Exception {
-        String invalidJson = """
-                [
-                    {"transactionId": "TXN001", "amount": 100.0, "type": "CREDIT"
-                """; // missing closing bracket and quotes
-
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(invalidJson))
-                .andExpect(status().isBadRequest());
-    }
-
-    // PROCESS – Zero amount transaction (boundary case)
-    @Test
-    void testProcessZeroAmountTransaction() throws Exception {
-        String request = """
-                [
-                    {"transactionId": "TXN003", "amount": 0, "type": "DEBIT", "timestamp": "2025-10-07T10:00:00"}
-                ]
-                """;
-
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string("Provide valid transaction details!"));
-
-        verify(walletService, never()).process(anyList());
-    }
-
-    @Test
-    void testProcessNegativeAmountTransaction() throws Exception {
-        String request = """
-            [
-                {"transactionId": "TXN004", "amount": -50, "type": "CREDIT", "timestamp": "2025-10-07T10:00:00"}
-            ]
-            """;
-
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(request))
-                .andExpect(status().isBadRequest())
-                .andExpect(content().string("Provide valid transaction details!"));
-
-        verify(walletService, never()).process(anyList());
-    }
-
-
-    // PROCESS – Large number of transactions (stress test)
-    @Test
-    void testProcessLargeTransactionList() throws Exception {
-        StringBuilder json = new StringBuilder("[");
-        for (int i = 0; i < 1000; i++) {
-            json.append(String.format("{\"transactionId\":\"TXN%d\",\"amount\":10.0,\"type\":\"CREDIT\",\"timestamp\":\"2025-10-07T10:00:00\"},", i));
-        }
-        json.deleteCharAt(json.length() - 1); // remove last comma
-        json.append("]");
-
-        mockMvc.perform(post("/transactions/process")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json.toString()))
-                .andExpect(status().isOk())
-                .andExpect(content().string("Transactions processed successfully!"));
-
-        verify(walletService, times(1)).process(anyList());
+        verify(walletService, times(1)).listTransactions(1L);
     }
 }

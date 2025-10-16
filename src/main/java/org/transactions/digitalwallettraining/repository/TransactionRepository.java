@@ -3,6 +3,8 @@ package org.transactions.digitalwallettraining.repository;
 import org.transactions.digitalwallettraining.entity.TransactionEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.transactions.digitalwallettraining.entity.TransactionType;
+
 import java.util.List;
 
 public interface TransactionRepository extends JpaRepository<TransactionEntity, Long> {
@@ -15,7 +17,7 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
     List<TransactionEntity> findTransactionsGreaterThan(Double amount);
 
     // Find transactions by type (CREDIT or DEBIT)
-    List<TransactionEntity> findByType(TransactionEntity.TransactionType type);
+    List<TransactionEntity> findByType(TransactionType type);
 
     // Find transactions with amount between two values
     List<TransactionEntity> findByAmountBetween(Double min, Double max);

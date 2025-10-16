@@ -1,12 +1,16 @@
 package org.transactions.digitalwallettraining.validation;
 
-import org.transactions.digitalwallettraining.model.WalletTransaction;
+import org.transactions.digitalwallettraining.dto.WalletTransactionRequestDTO;
 
 public class TransactionValidator {
-    public static boolean isValid(Object obj) {
-        if (obj instanceof WalletTransaction wt) {
-            return wt.amount() > 0 && (wt.type().equals("CREDIT") || wt.type().equals("DEBIT"));
-        }
-        return false;
+
+    public static boolean isValid(WalletTransactionRequestDTO tx) {
+        if (tx == null) return false;
+
+        Double amount = tx.amount();
+        String type = tx.type();
+
+        return amount != null && amount > 0 &&
+                (type.equalsIgnoreCase("CREDIT") || type.equalsIgnoreCase("DEBIT"));
     }
 }
