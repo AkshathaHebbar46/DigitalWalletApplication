@@ -10,8 +10,6 @@ import org.transactions.digitalwallettraining.entity.TransactionEntity;
 @Mapper(componentModel = "spring")
 public interface WalletTransactionMapper {
 
-    WalletTransactionMapper INSTANCE = Mappers.getMapper(WalletTransactionMapper.class);
-
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "wallet", ignore = true)
     @Mapping(target = "transactionDate", expression = "java(java.time.LocalDateTime.now())")

@@ -48,4 +48,49 @@ public class WalletController {
         List<WalletTransactionResponseDTO> list = walletService.listTransactions(walletId);
         return ResponseEntity.ok(list);
     }
+
+    public void transferMoney(Long fromWalletId, Long toWalletId, Double amount) {
+        if (fromWalletId.equals(toWalletId)) {
+            throw new IllegalArgumentException("Cannot transfer to the same wallet");
+        }
+
+        // Create debit transaction
+        WalletTransactionRequestDTO debitRequest = new WalletTransactionRequestDTO(
+                "TXN-DEBIT-" + System.currentTimeMillis(),
+                amount,
+                "DEBIT",
+                "Transfer to wallet " + toWalletId
+        );
+        processTransaction(fromWalletId, debitRequest);
+
+        // Create credit transaction
+        WalletTransactionRequestDTO creditRequest = new WalletTransactionRequestDTO(
+                "TXN-CREDIT-" + System.currentTimeMillis(),
+                amount,
+                "CREDIT",
+                "Transfer from wallet " + fromWalletId
+        );
+        processTransaction(toWalletId, creditRequest);
+    }
+    // Transfer money between wallets
+    @PostMapping("/transfer")
+    public ResponseEntity<WalletTransactionResponseDTO> transferMoney(
+            @RequestBody @Valid WalletTransferRequestDTO request) {
+
+        WalletTransactionResponseDTO debitTx = walletService.transferMoney(
+                request.fromWalletId(),
+                request.toWalletId(),
+                new WalletTransactionRequestDTO(
+                        request.transactionId(),
+                        request.amount(),
+                        "DEBIT",
+                        request.description()
+                )
+        );
+        return ResponseEntity.status(201).body(debitTx);
+    }
+
+
+
+
 }

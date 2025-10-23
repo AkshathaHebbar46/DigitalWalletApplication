@@ -36,16 +36,13 @@ dependencies {
         implementation 'org.mapstruct:mapstruct:1.5.5.Final'
         annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
 
-
-
-
-
-    runtimeOnly 'com.h2database:h2'
+        runtimeOnly 'com.h2database:h2'
 
         testImplementation 'org.springframework.boot:spring-boot-starter-test'
         testImplementation 'org.mockito:mockito-inline:3.8.0'
         testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.0'
         testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.0'
+
     }
 
 
