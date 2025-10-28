@@ -56,7 +56,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    // Update user
+    // Updathne user
     @PutMapping("/{userId}")
     public ResponseEntity<UserResponseDTO> updateUser(@PathVariable Long userId, @RequestBody UserRequestDTO request) {
         logger.info("Updating user id={} with new data: email={}, name={}, age={}", userId, request.email(), request.name(), request.age());

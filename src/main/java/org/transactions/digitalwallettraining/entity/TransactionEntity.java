@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "transactions")
+@Table(name = "transactions", uniqueConstraints = {
+        @UniqueConstraint(columnNames = "transaction_id")
+})
 public class TransactionEntity {
 
     @Id
@@ -28,7 +30,7 @@ public class TransactionEntity {
     @Column(name = "transaction_date")
     private LocalDateTime transactionDate = LocalDateTime.now();
 
-    @Column
+    @Column(nullable = false, unique = true)
     private String transactionId;
 
 

@@ -16,6 +16,10 @@ public class WalletEntity {
     @Column(nullable = false)
     private Double balance = 0.0;
 
+    @Version
+    @Column(name = "version")
+    private Long version;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 

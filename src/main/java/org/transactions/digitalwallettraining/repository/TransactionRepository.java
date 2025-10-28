@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.transactions.digitalwallettraining.entity.TransactionType;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface TransactionRepository extends JpaRepository<TransactionEntity, Long> {
 
@@ -24,4 +25,7 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
 
     // Find transactions after a certain date
     List<TransactionEntity> findByTransactionDateAfter(java.time.LocalDateTime date);
+
+    TransactionEntity findByTransactionId(String transactionId);
+
 }

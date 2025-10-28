@@ -2,188 +2,244 @@ package org.transactions.digitalwallettraining.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.transactions.digitalwallettraining.dto.*;
+import org.transactions.digitalwallettraining.entity.*;
+import org.transactions.digitalwallettraining.exception.MaxRetryExceededException;
+import org.transactions.digitalwallettraining.repository.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.*;
+import jakarta.persistence.OptimisticLockException;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class WalletService {
 
     private static final Logger log = LoggerFactory.getLogger(WalletService.class);
 
-    private final Map<Long, WalletResponseDTO> wallets = new HashMap<>();
-    private final Map<Long, List<WalletTransactionResponseDTO>> transactions = new HashMap<>();
-    private Long walletCounter = 1L;
+    private final WalletRepository walletRepository;
+    private final TransactionRepository transactionRepository;
+    private final UserRepository userRepository;
 
-    private static final double MAX_TRANSACTION_AMOUNT = 100_000; // 1 lakh
-    private static final double MAX_DAILY_DEBIT = 100_000; // 1 lakh
+    private static final int MAX_RETRIES = 5;
+    private static final long BASE_BACKOFF_MS = 100L;
 
-    // Create a wallet
-    public WalletResponseDTO createWallet(WalletRequestDTO request) {
-        Long walletId = walletCounter++;
-        log.info("Creating wallet for userId: {}, initial balance: {}", request.getUserId(), request.getBalance());
-
-        WalletResponseDTO wallet = new WalletResponseDTO(walletId, request.getUserId(), request.getBalance());
-        wallets.put(walletId, wallet);
-        transactions.put(walletId, new ArrayList<>());
-
-        log.debug("Wallet created successfully: {}", wallet);
-        return wallet;
+    public WalletService(WalletRepository walletRepository,
+                         TransactionRepository transactionRepository,
+                         UserRepository userRepository) {
+        this.walletRepository = walletRepository;
+        this.transactionRepository = transactionRepository;
+        this.userRepository = userRepository;
     }
 
-    // Get wallet balance
+    // 🔹 Create Wallet
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public WalletResponseDTO createWallet(WalletRequestDTO request) {
+        log.info("Creating wallet for userId={} with initial balance={}", request.getUserId(), request.getBalance());
+
+        UserEntity user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> {
+                    log.error("User not found with id={}", request.getUserId());
+                    return new IllegalArgumentException("User not found");
+                });
+
+        WalletEntity wallet = new WalletEntity(user, request.getBalance());
+        walletRepository.save(wallet);
+
+        log.info("Wallet created successfully with walletId={} for userId={}", wallet.getId(), user.getId());
+        return new WalletResponseDTO(wallet.getId(), user.getId(), wallet.getBalance());
+    }
+
+    // 🔹 Get Wallet Balance
+    @Transactional(readOnly = true, propagation = Propagation.SUPPORTS)
     public Double getBalance(Long walletId) {
-        log.info("Fetching balance for walletId: {}", walletId);
-        WalletResponseDTO wallet = wallets.get(walletId);
+        log.debug("Fetching balance for walletId={}", walletId);
 
-        if (wallet == null) {
-            log.error("Wallet not found: {}", walletId);
-            throw new NoSuchElementException("Wallet not found");
-        }
+        WalletEntity wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> {
+                    log.error("Wallet not found with id={}", walletId);
+                    return new IllegalArgumentException("Wallet not found");
+                });
 
-        log.debug("Wallet balance retrieved: {}", wallet.getBalance());
+        log.info("Wallet balance for walletId={} is {}", walletId, wallet.getBalance());
         return wallet.getBalance();
     }
 
-    // Process a transaction
+    // 🔹 Process Credit/Debit Transaction with Retry + Logging
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public WalletTransactionResponseDTO processTransaction(Long walletId, WalletTransactionRequestDTO request) {
-        WalletResponseDTO wallet = wallets.get(walletId);
-        if (wallet == null) {
-            log.error("Wallet not found: {}", walletId);
-            throw new NoSuchElementException("Wallet not found");
-        }
+        int attempt = 0;
+        log.info("Starting {} transaction for walletId={} with amount={} and txnId={}",
+                request.type(), walletId, request.amount(), request.transactionId());
 
-        Double amount = request.amount();
-        String type = request.type().toUpperCase();
-
-        log.info("Processing {} transaction for walletId: {} with amount: {}", type, walletId, amount);
-
-        // Validate per-transaction amount
-        if (amount <= 0 || amount > MAX_TRANSACTION_AMOUNT) {
-            log.warn("Transaction amount {} is invalid for walletId: {}", amount, walletId);
-            throw new IllegalArgumentException("Transaction amount must be between 0 and 1 lakh");
-        }
-
-        if ("DEBIT".equals(type)) {
-            // Calculate total debit for today
-            double dailyDebitTotal = transactions.get(walletId).stream()
-                    .filter(tx -> "DEBIT".equalsIgnoreCase(tx.type()) &&
-                            tx.timestamp().toLocalDate().equals(LocalDate.now()))
-                    .mapToDouble(WalletTransactionResponseDTO::amount)
-                    .sum();
-
-            if (dailyDebitTotal + amount > MAX_DAILY_DEBIT) {
-                log.warn("Daily debit limit exceeded for walletId: {} (current total={}, attempted debit={})",
-                        walletId, dailyDebitTotal, amount);
-                throw new IllegalArgumentException("Daily debit limit of 1 lakh exceeded for walletId: " + walletId);
+        // 🧩 Step 1: Check if transactionId already exists (idempotency)
+        if (request.transactionId() != null) {
+            TransactionEntity existing = transactionRepository.findByTransactionId(request.transactionId());
+            if (existing != null) {
+                log.info("Duplicate transaction detected (idempotent) — returning existing record for txnId={}", request.transactionId());
+                return new WalletTransactionResponseDTO(
+                        existing.getTransactionId(),
+                        existing.getAmount(),
+                        existing.getType().name(),
+                        existing.getTransactionDate(),
+                        existing.getDescription()
+                );
             }
-
-            if (wallet.getBalance() < amount) {
-                log.warn("Insufficient balance for walletId: {} (balance={}, attempted debit={})",
-                        walletId, wallet.getBalance(), amount);
-                throw new IllegalArgumentException("Insufficient wallet balance");
-            }
-
-            wallet.setBalance(wallet.getBalance() - amount);
-            log.debug("Wallet debited: new balance = {}", wallet.getBalance());
-
-        } else if ("CREDIT".equals(type)) {
-            wallet.setBalance(wallet.getBalance() + amount);
-            log.debug("Wallet credited: new balance = {}", wallet.getBalance());
-        } else {
-            log.error("Invalid transaction type: {}", type);
-            throw new IllegalArgumentException("Transaction type must be CREDIT or DEBIT");
         }
 
-        // Create transaction with timestamp
-        WalletTransactionResponseDTO response = new WalletTransactionResponseDTO(
-                request.transactionId(),
-                amount,
-                type,
-                LocalDateTime.now(), // timestamp required for daily limit
-                request.description()
-        );
+        while (true) {
+            try {
+                attempt++;
+                WalletEntity wallet = walletRepository.findById(walletId)
+                        .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
 
-        transactions.get(walletId).add(response);
-        log.info("Transaction completed successfully for walletId: {}, transactionId: {}", walletId, request.transactionId());
+                TransactionType type = TransactionType.valueOf(request.type().toUpperCase());
+                double amount = request.amount();
 
-        return response;
+                if (amount <= 0) {
+                    throw new IllegalArgumentException("Transaction amount must be positive");
+                }
+                if (type == TransactionType.DEBIT && wallet.getBalance() < amount) {
+                    throw new IllegalArgumentException("Insufficient balance");
+                }
+
+                double newBalance = (type == TransactionType.CREDIT)
+                        ? wallet.getBalance() + amount
+                        : wallet.getBalance() - amount;
+
+                wallet.setBalance(newBalance);
+
+                // 🧩 Step 2: Generate transactionId if not provided
+                String txnId = request.transactionId() != null ? request.transactionId() : UUID.randomUUID().toString();
+
+                TransactionEntity transaction = new TransactionEntity(
+                        wallet,
+                        type,
+                        amount,
+                        request.description()
+                );
+                transaction.setTransactionId(txnId);
+
+                transactionRepository.save(transaction);
+                walletRepository.saveAndFlush(wallet);
+
+                log.info("{} transaction successful for walletId={} | txnId={} | newBalance={}",
+                        type, walletId, txnId, wallet.getBalance());
+
+                return new WalletTransactionResponseDTO(
+                        transaction.getTransactionId(),
+                        transaction.getAmount(),
+                        type.name(),
+                        transaction.getTransactionDate(),
+                        transaction.getDescription()
+                );
+
+            } catch (OptimisticLockException | ObjectOptimisticLockingFailureException | CannotAcquireLockException ex) {
+                log.warn("⚠️ Concurrency conflict on walletId={} (attempt {}): {}", walletId, attempt, ex.getMessage());
+                if (attempt >= MAX_RETRIES) {
+                    throw new MaxRetryExceededException(
+                            "Max retry attempts exceeded due to concurrent modification. Please retry the request.", ex
+                    );
+                }
+
+                try {
+                    long sleepMs = BASE_BACKOFF_MS * (1L << (attempt - 1));
+                    Thread.sleep(sleepMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Transaction interrupted while retrying", ie);
+                }
+            }
+        }
     }
 
-    // List transactions
+
+    // 🔹 List Transactions
+    @Transactional(readOnly = true)
     public List<WalletTransactionResponseDTO> listTransactions(Long walletId) {
-        log.info("Listing transactions for walletId: {}", walletId);
-        if (!transactions.containsKey(walletId)) {
-            log.error("Wallet not found: {}", walletId);
-            throw new NoSuchElementException("Wallet not found");
-        }
+        log.debug("Fetching transaction history for walletId={}", walletId);
 
-        List<WalletTransactionResponseDTO> txList = transactions.get(walletId);
-        log.debug("Total transactions found: {}", txList.size());
-        return txList;
+        List<TransactionEntity> transactions = transactionRepository.findByWalletId(walletId);
+        log.info("Found {} transactions for walletId={}", transactions.size(), walletId);
+
+        return transactions.stream()
+                .map(tx -> new WalletTransactionResponseDTO(
+                        tx.getTransactionId(),
+                        tx.getAmount(),
+                        tx.getType().name(),
+                        tx.getTransactionDate(),
+                        tx.getDescription()
+                ))
+                .collect(Collectors.toList());
     }
 
-    public WalletTransactionResponseDTO transferMoney(Long fromWalletId, Long toWalletId, WalletTransactionRequestDTO request) {
-        log.info("Transferring {} from wallet {} to wallet {}", request.amount(), fromWalletId, toWalletId);
+    // 🔹 Transfer Money Between Wallets
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public WalletTransactionResponseDTO transferMoney(Long fromWalletId,
+                                                      Long toWalletId,
+                                                      WalletTransactionRequestDTO request) {
+        log.info("Initiating transfer: fromWalletId={} → toWalletId={} | amount={}",
+                fromWalletId, toWalletId, request.amount());
 
-        WalletResponseDTO fromWallet = wallets.get(fromWalletId);
-        WalletResponseDTO toWallet = wallets.get(toWalletId);
-
-        if (fromWallet == null) throw new NoSuchElementException("Source wallet not found");
-        if (toWallet == null) throw new NoSuchElementException("Destination wallet not found");
-
-        Double amount = request.amount();
-
-        // Validate amount
-        if (amount <= 0 || amount > MAX_TRANSACTION_AMOUNT) {
-            throw new IllegalArgumentException("Transaction amount must be between 0 and 1 lakh");
+        if (fromWalletId.equals(toWalletId)) {
+            log.error("Transfer failed: source and target wallets are the same (walletId={})", fromWalletId);
+            throw new IllegalArgumentException("Cannot transfer to the same wallet");
         }
 
-        // Check daily debit limit for sender
-        double dailyDebitTotal = transactions.get(fromWalletId).stream()
-                .filter(tx -> "DEBIT".equalsIgnoreCase(tx.type()) &&
-                        tx.timestamp().toLocalDate().equals(LocalDate.now()))
-                .mapToDouble(WalletTransactionResponseDTO::amount)
-                .sum();
-
-        if (dailyDebitTotal + amount > MAX_DAILY_DEBIT) {
-            throw new IllegalArgumentException("Daily debit limit of 1 lakh exceeded for walletId: " + fromWalletId);
+        double amount = request.amount();
+        if (amount <= 0) {
+            log.error("Invalid transfer amount={} from walletId={}", amount, fromWalletId);
+            throw new IllegalArgumentException("Transfer amount must be positive");
         }
 
-        // Check sender balance
-        if (fromWallet.getBalance() < amount) {
+        Long firstId = Math.min(fromWalletId, toWalletId);
+        Long secondId = Math.max(fromWalletId, toWalletId);
+
+        WalletEntity first = walletRepository.findByIdForUpdate(firstId)
+                .orElseThrow(() -> new IllegalArgumentException("Wallet not found: " + firstId));
+        WalletEntity second = walletRepository.findByIdForUpdate(secondId)
+                .orElseThrow(() -> new IllegalArgumentException("Wallet not found: " + secondId));
+
+        WalletEntity source = fromWalletId.equals(firstId) ? first : second;
+        WalletEntity target = toWalletId.equals(firstId) ? first : second;
+
+        if (source.getBalance() < amount) {
+            log.warn("Transfer failed: insufficient funds in walletId={} (balance={}, amount={})",
+                    source.getId(), source.getBalance(), amount);
             throw new IllegalArgumentException("Insufficient balance in source wallet");
         }
 
-        // Perform debit from source
-        fromWallet.setBalance(fromWallet.getBalance() - amount);
-        WalletTransactionResponseDTO debitTx = new WalletTransactionResponseDTO(
-                request.transactionId() + "-DEBIT",
-                amount,
-                "DEBIT",
-                LocalDateTime.now(),
-                "Transfer to wallet " + toWalletId
+        source.setBalance(source.getBalance() - amount);
+        target.setBalance(target.getBalance() + amount);
+
+        TransactionEntity debitTxn = new TransactionEntity(source, TransactionType.DEBIT, amount,
+                "Transfer to wallet " + toWalletId);
+        debitTxn.setTransactionId(request.transactionId() != null ? request.transactionId() : UUID.randomUUID().toString());
+
+        TransactionEntity creditTxn = new TransactionEntity(target, TransactionType.CREDIT, amount,
+                "Transfer from wallet " + fromWalletId);
+        creditTxn.setTransactionId(UUID.randomUUID().toString());
+
+        transactionRepository.save(debitTxn);
+        transactionRepository.save(creditTxn);
+        walletRepository.saveAndFlush(source);
+        walletRepository.saveAndFlush(target);
+
+        log.info("✅ Transfer completed successfully: {} → {} | amount={} | sourceBalance={} | targetBalance={}",
+                fromWalletId, toWalletId, amount, source.getBalance(), target.getBalance());
+
+        return new WalletTransactionResponseDTO(
+                creditTxn.getTransactionId(),
+                creditTxn.getAmount(),
+                creditTxn.getType().name(),
+                creditTxn.getTransactionDate(),
+                creditTxn.getDescription()
         );
-        transactions.get(fromWalletId).add(debitTx);
-
-        // Perform credit to destination
-        toWallet.setBalance(toWallet.getBalance() + amount);
-        WalletTransactionResponseDTO creditTx = new WalletTransactionResponseDTO(
-                request.transactionId() + "-CREDIT",
-                amount,
-                "CREDIT",
-                LocalDateTime.now(),
-                "Transfer from wallet " + fromWalletId
-        );
-        transactions.get(toWalletId).add(creditTx);
-
-        log.info("Transfer completed successfully from wallet {} to wallet {}", fromWalletId, toWalletId);
-
-        // Return debit transaction info for reference
-        return debitTx;
     }
-
 }

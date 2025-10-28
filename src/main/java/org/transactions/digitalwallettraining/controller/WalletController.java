@@ -81,10 +81,10 @@ public class WalletController {
                 request.fromWalletId(),
                 request.toWalletId(),
                 new WalletTransactionRequestDTO(
-                        request.transactionId(),
+                        null,
                         request.amount(),
                         "DEBIT",
-                        request.description()
+                        "Transfer request"
                 )
         );
         return ResponseEntity.status(201).body(debitTx);
