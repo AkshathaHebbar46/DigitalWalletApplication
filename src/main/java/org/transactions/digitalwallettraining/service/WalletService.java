@@ -14,7 +14,10 @@ import org.transactions.digitalwallettraining.exception.MaxRetryExceededExceptio
 import org.transactions.digitalwallettraining.repository.*;
 
 import jakarta.persistence.OptimisticLockException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -29,6 +32,9 @@ public class WalletService {
 
     private static final int MAX_RETRIES = 5;
     private static final long BASE_BACKOFF_MS = 100L;
+
+    // ✅ Business rule constant (Daily limit only)
+    private static final double DAILY_LIMIT = 50000.0;
 
     public WalletService(WalletRepository walletRepository,
                          TransactionRepository transactionRepository,
@@ -71,17 +77,71 @@ public class WalletService {
         return wallet.getBalance();
     }
 
-    // 🔹 Process Credit/Debit Transaction with Retry + Logging
+    // ✅ Validate wallet status
+    private void validateWalletStatus(WalletEntity wallet) {
+        if (wallet.getStatus() == WalletStatus.INACTIVE) {
+            if (wallet.getDeactivatedAt() != null && wallet.getDeactivatedAt().isBefore(LocalDateTime.now())) {
+                // ✅ Reactivate after 2 minutes
+                wallet.setStatus(WalletStatus.ACTIVE);
+                wallet.setDeactivatedAt(null);
+                walletRepository.save(wallet);
+            } else {
+                throw new IllegalStateException("Wallet is temporarily deactivated. Try again later.");
+            }
+        }
+    }
+
+
+    // ✅ Validate sufficient balance
+    private void validateSufficientBalance(WalletEntity wallet, double amount) {
+        if (wallet.getBalance() < amount) {
+            log.warn("Insufficient balance: walletId={}, balance={}, attemptedDebit={}",
+                    wallet.getId(), wallet.getBalance(), amount);
+            throw new IllegalArgumentException("Insufficient balance for this operation.");
+        }
+    }
+
+    // ✅ Validate daily transaction limit only
+    private void validateTransactionLimits(WalletEntity wallet, double amount) {
+        Long walletId = wallet.getId();
+        LocalDate today = LocalDate.now();
+
+        // ✅ Calculate today's total debit amount
+        double todayTotal = transactionRepository.sumDebitsByWalletAndDate(
+                walletId,
+                today.atStartOfDay(),
+                today.plusDays(1).atStartOfDay()
+        );
+
+        // 🚨 Check if today's total + this debit > limit
+        if (todayTotal + amount > DAILY_LIMIT) {
+            log.error("Daily limit exceeded for walletId={} | todayTotal={} | attempted={}",
+                    walletId, todayTotal, amount);
+
+            // 🔒 Deactivate wallet for 2 minutes (for testing)
+            wallet.setStatus(WalletStatus.INACTIVE);
+            wallet.setDeactivatedAt(LocalDateTime.now().plusMinutes(2));
+            walletRepository.save(wallet);
+
+            throw new IllegalStateException(
+                    "Daily transaction limit exceeded. Wallet has been temporarily deactivated for 2 minutes."
+            );
+        }
+    }
+
+
+    // 🔹 Process Credit/Debit Transaction with Retry + Validation
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public WalletTransactionResponseDTO processTransaction(Long walletId, WalletTransactionRequestDTO request) {
         int attempt = 0;
         log.info("Starting {} transaction for walletId={} with amount={} and txnId={}",
                 request.type(), walletId, request.amount(), request.transactionId());
 
-        // 🧩 Step 1: Check if transactionId already exists (idempotency)
+        // 🧩 Step 1: Idempotency check
         if (request.transactionId() != null) {
-            TransactionEntity existing = transactionRepository.findByTransactionId(request.transactionId());
-            if (existing != null) {
+            Optional<TransactionEntity> existingOpt = transactionRepository.findByTransactionId(request.transactionId());
+            if (existingOpt.isPresent()) {
+                TransactionEntity existing = existingOpt.get();
                 log.info("Duplicate transaction detected (idempotent) — returning existing record for txnId={}", request.transactionId());
                 return new WalletTransactionResponseDTO(
                         existing.getTransactionId(),
@@ -93,37 +153,36 @@ public class WalletService {
             }
         }
 
+        // 🧩 Step 2: Retry logic for concurrency
         while (true) {
             try {
                 attempt++;
                 WalletEntity wallet = walletRepository.findById(walletId)
                         .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
 
+                // ✅ Business validations
+                validateWalletStatus(wallet);
                 TransactionType type = TransactionType.valueOf(request.type().toUpperCase());
                 double amount = request.amount();
+                if (amount <= 0) throw new IllegalArgumentException("Transaction amount must be positive");
 
-                if (amount <= 0) {
-                    throw new IllegalArgumentException("Transaction amount must be positive");
-                }
-                if (type == TransactionType.DEBIT && wallet.getBalance() < amount) {
-                    throw new IllegalArgumentException("Insufficient balance");
+                if (type == TransactionType.DEBIT) {
+                    validateSufficientBalance(wallet, amount);
+                    validateTransactionLimits(wallet, amount); // ✅ Daily limit check
                 }
 
+                // Update balance
                 double newBalance = (type == TransactionType.CREDIT)
                         ? wallet.getBalance() + amount
                         : wallet.getBalance() - amount;
 
                 wallet.setBalance(newBalance);
 
-                // 🧩 Step 2: Generate transactionId if not provided
-                String txnId = request.transactionId() != null ? request.transactionId() : UUID.randomUUID().toString();
+                String txnId = (request.transactionId() != null)
+                        ? request.transactionId()
+                        : UUID.randomUUID().toString();
 
-                TransactionEntity transaction = new TransactionEntity(
-                        wallet,
-                        type,
-                        amount,
-                        request.description()
-                );
+                TransactionEntity transaction = new TransactionEntity(wallet, type, amount, request.description());
                 transaction.setTransactionId(txnId);
 
                 transactionRepository.save(transaction);
@@ -142,6 +201,7 @@ public class WalletService {
 
             } catch (OptimisticLockException | ObjectOptimisticLockingFailureException | CannotAcquireLockException ex) {
                 log.warn("⚠️ Concurrency conflict on walletId={} (attempt {}): {}", walletId, attempt, ex.getMessage());
+
                 if (attempt >= MAX_RETRIES) {
                     throw new MaxRetryExceededException(
                             "Max retry attempts exceeded due to concurrent modification. Please retry the request.", ex
@@ -158,7 +218,6 @@ public class WalletService {
             }
         }
     }
-
 
     // 🔹 List Transactions
     @Transactional(readOnly = true)
@@ -179,7 +238,7 @@ public class WalletService {
                 .collect(Collectors.toList());
     }
 
-    // 🔹 Transfer Money Between Wallets
+    // 🔹 Transfer Money Between Wallets (with all validations)
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public WalletTransactionResponseDTO transferMoney(Long fromWalletId,
                                                       Long toWalletId,
@@ -209,12 +268,13 @@ public class WalletService {
         WalletEntity source = fromWalletId.equals(firstId) ? first : second;
         WalletEntity target = toWalletId.equals(firstId) ? first : second;
 
-        if (source.getBalance() < amount) {
-            log.warn("Transfer failed: insufficient funds in walletId={} (balance={}, amount={})",
-                    source.getId(), source.getBalance(), amount);
-            throw new IllegalArgumentException("Insufficient balance in source wallet");
-        }
+        // ✅ Business rule checks
+        validateWalletStatus(source);
+        validateWalletStatus(target);
+        validateSufficientBalance(source, amount);
+        validateTransactionLimits(source, amount); // ✅ Daily limit check
 
+        // Perform transfer
         source.setBalance(source.getBalance() - amount);
         target.setBalance(target.getBalance() + amount);
 
@@ -242,4 +302,74 @@ public class WalletService {
                 creditTxn.getDescription()
         );
     }
+
+    // 🔹 Get wallet details
+    @Transactional(readOnly = true)
+    public WalletResponseDTO getWalletDetails(Long walletId) {
+        log.info("Fetching wallet details for walletId={}", walletId);
+
+        WalletEntity wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> {
+                    log.error("Wallet not found with id={}", walletId);
+                    return new IllegalArgumentException("Wallet not found");
+                });
+
+        UserEntity user = wallet.getUser();
+        log.info("Wallet details: walletId={}, balance={}, status={}, userId={}",
+                wallet.getId(), wallet.getBalance(), wallet.getStatus(), user.getId());
+
+        return new WalletResponseDTO(wallet.getId(), user.getId(), wallet.getBalance());
+    }
+
+    // 🔹 Activate wallet
+    @Transactional
+    public void activateWallet(Long walletId) {
+        log.info("Activating wallet with id={}", walletId);
+
+        WalletEntity wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
+
+        if (wallet.getStatus() == WalletStatus.ACTIVE) {
+            log.warn("Wallet with id={} is already active", walletId);
+            return;
+        }
+
+        wallet.setStatus(WalletStatus.ACTIVE);
+        walletRepository.save(wallet);
+
+        log.info("✅ Wallet with id={} activated successfully", walletId);
+    }
+
+    // 🔹 Deactivate wallet
+    @Transactional
+    public void deactivateWallet(Long walletId) {
+        log.info("Deactivating wallet with id={}", walletId);
+
+        WalletEntity wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
+
+        if (wallet.getStatus() == WalletStatus.INACTIVE) {
+            log.warn("Wallet with id={} is already inactive", walletId);
+            return;
+        }
+
+        wallet.setStatus(WalletStatus.INACTIVE);
+        walletRepository.save(wallet);
+
+        log.info("🚫 Wallet with id={} deactivated successfully", walletId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalletResponseDTO> getAllWallets() {
+        List<WalletEntity> wallets = walletRepository.findAll();
+        return wallets.stream()
+                .map(wallet -> new WalletResponseDTO(
+                        wallet.getId(),
+                        wallet.getUser().getId(),
+                        wallet.getBalance()
+                ))
+                .collect(Collectors.toList());
+    }
+
+
 }

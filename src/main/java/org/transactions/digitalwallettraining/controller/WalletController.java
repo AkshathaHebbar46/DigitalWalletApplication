@@ -1,5 +1,7 @@
 package org.transactions.digitalwallettraining.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.transactions.digitalwallettraining.dto.*;
@@ -12,72 +14,57 @@ import java.util.List;
 @RequestMapping("/wallets")
 public class WalletController {
 
+    private static final Logger log = LoggerFactory.getLogger(WalletController.class);
     private final WalletService walletService;
 
     public WalletController(WalletService walletService) {
         this.walletService = walletService;
     }
 
-    // Create wallet
+    // 🔹 Create wallet manually (if needed)
     @PostMapping
-    public ResponseEntity<WalletResponseDTO> createWallet(@RequestBody WalletRequestDTO request) {
+    public ResponseEntity<WalletResponseDTO> createWallet(@RequestBody @Valid WalletRequestDTO request) {
+        log.info("Received request to create wallet for userId={}", request.getUserId());
         WalletResponseDTO wallet = walletService.createWallet(request);
+        log.info("Wallet created successfully for userId={}, walletId={}", request.getUserId(), wallet.getWalletId());
         return ResponseEntity.status(201).body(wallet);
     }
 
-    // Get balance
+    // 🔹 Get wallet balance
     @GetMapping("/{walletId}/balance")
     public ResponseEntity<Double> getBalance(@PathVariable Long walletId) {
+        log.info("Fetching wallet balance for walletId={}", walletId);
         Double balance = walletService.getBalance(walletId);
         return ResponseEntity.ok(balance);
     }
 
-    // Process transaction
+    // 🔹 Process CREDIT / DEBIT
     @PostMapping("/{walletId}/transactions")
     public ResponseEntity<WalletTransactionResponseDTO> processTransaction(
             @PathVariable Long walletId,
             @Valid @RequestBody WalletTransactionRequestDTO request) {
 
+        log.info("Processing {} transaction for walletId={} with amount={}",
+                request.type(), walletId, request.amount());
         WalletTransactionResponseDTO txn = walletService.processTransaction(walletId, request);
+        log.info("{} transaction completed for walletId={}, txnId={}", request.type(), walletId, txn.transactionId());
         return ResponseEntity.status(201).body(txn);
     }
 
-    // List transactions
-    @GetMapping("/{walletId}/transactions")
+    // 🔹 List all transactions for a wallet
+    @GetMapping("/{walletId}/list-transactions")
     public ResponseEntity<List<WalletTransactionResponseDTO>> listTransactions(@PathVariable Long walletId) {
+        log.info("Listing all transactions for walletId={}", walletId);
         List<WalletTransactionResponseDTO> list = walletService.listTransactions(walletId);
         return ResponseEntity.ok(list);
     }
 
-    public void transferMoney(Long fromWalletId, Long toWalletId, Double amount) {
-        if (fromWalletId.equals(toWalletId)) {
-            throw new IllegalArgumentException("Cannot transfer to the same wallet");
-        }
-
-        // Create debit transaction
-        WalletTransactionRequestDTO debitRequest = new WalletTransactionRequestDTO(
-                "TXN-DEBIT-" + System.currentTimeMillis(),
-                amount,
-                "DEBIT",
-                "Transfer to wallet " + toWalletId
-        );
-        processTransaction(fromWalletId, debitRequest);
-
-        // Create credit transaction
-        WalletTransactionRequestDTO creditRequest = new WalletTransactionRequestDTO(
-                "TXN-CREDIT-" + System.currentTimeMillis(),
-                amount,
-                "CREDIT",
-                "Transfer from wallet " + fromWalletId
-        );
-        processTransaction(toWalletId, creditRequest);
-    }
-    // Transfer money between wallets
+    // 🔹 Transfer money between wallets
     @PostMapping("/transfer")
     public ResponseEntity<WalletTransactionResponseDTO> transferMoney(
             @RequestBody @Valid WalletTransferRequestDTO request) {
-
-        WalletTransactionResponseDTO debitTx = walletService.transferMoney(
+        log.info("Received transfer request: {} → {} | amount={}", request.fromWalletId(), request.toWalletId(), request.amount());
+        WalletTransactionResponseDTO response = walletService.transferMoney(
                 request.fromWalletId(),
                 request.toWalletId(),
                 new WalletTransactionRequestDTO(
@@ -87,10 +74,40 @@ public class WalletController {
                         "Transfer request"
                 )
         );
-        return ResponseEntity.status(201).body(debitTx);
+        log.info("Transfer processed successfully between {} and {}", request.fromWalletId(), request.toWalletId());
+        return ResponseEntity.status(201).body(response);
+    }
+
+    // 🔹 Get wallet details (includes user info, balance, and status)
+    @GetMapping("/{walletId}")
+    public ResponseEntity<WalletResponseDTO> getWalletDetails(@PathVariable Long walletId) {
+        log.info("Fetching wallet details for walletId={}", walletId);
+        WalletResponseDTO walletDetails = walletService.getWalletDetails(walletId);
+        return ResponseEntity.ok(walletDetails);
+    }
+    // 🔹 Get All Wallets
+    @GetMapping
+    public ResponseEntity<List<WalletResponseDTO>> getAllWallets() {
+        log.info("Fetching all wallets");
+        List<WalletResponseDTO> wallets = walletService.getAllWallets();
+        log.info("Retrieved {} wallets", wallets.size());
+        return ResponseEntity.ok(wallets);
     }
 
 
+    // 🔹 Activate a wallet
+    @PatchMapping("/{walletId}/activate")
+    public ResponseEntity<String> activateWallet(@PathVariable Long walletId) {
+        log.info("Activating wallet with id={}", walletId);
+        walletService.activateWallet(walletId);
+        return ResponseEntity.ok("Wallet activated successfully");
+    }
 
-
+    // 🔹 Deactivate a wallet
+    @PatchMapping("/{walletId}/deactivate")
+    public ResponseEntity<String> deactivateWallet(@PathVariable Long walletId) {
+        log.info("Deactivating wallet with id={}", walletId);
+        walletService.deactivateWallet(walletId);
+        return ResponseEntity.ok("Wallet deactivated successfully");
+    }
 }

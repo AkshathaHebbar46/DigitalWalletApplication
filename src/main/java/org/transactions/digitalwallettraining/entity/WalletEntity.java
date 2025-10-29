@@ -20,6 +20,21 @@ public class WalletEntity {
     @Column(name = "version")
     private Long version;
 
+    public LocalDateTime getDeactivatedAt() {
+        return deactivatedAt;
+    }
+
+    public void setDeactivatedAt(LocalDateTime deactivatedAt) {
+        this.deactivatedAt = deactivatedAt;
+    }
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private WalletStatus status = WalletStatus.ACTIVE;
+
+    @Column
+    private LocalDateTime deactivatedAt;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -69,6 +84,22 @@ public class WalletEntity {
 
     public UserEntity getUser() { return user; }
     public void setUser(UserEntity user) { this.user = user; }
+
+    public WalletStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(WalletStatus status) {
+        this.status = status;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
 
     public List<TransactionEntity> getTransactions() { return transactions; }
     public void setTransactions(List<TransactionEntity> transactions) { this.transactions = transactions; }

@@ -26,11 +26,9 @@ public class UserController {
     // Create a new user
     @PostMapping
     public ResponseEntity<UserResponseDTO> createUser(@Valid @RequestBody UserRequestDTO request) {
-        logger.info("Creating new user with email={}", request.email());
-
+        logger.info("Received request to create new user: {}", request.name());
         UserResponseDTO response = userService.createUser(request);
-
-        logger.info("User created successfully with id={}", response.id());
+        logger.info("User created successfully with userId={}", response.id());
         return ResponseEntity.status(201).body(response);
     }
 
@@ -56,7 +54,7 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
 
-    // Updathne user
+    // Update the user
     @PutMapping("/{userId}")
     public ResponseEntity<UserResponseDTO> updateUser(@PathVariable Long userId, @RequestBody UserRequestDTO request) {
         logger.info("Updating user id={} with new data: email={}, name={}, age={}", userId, request.email(), request.name(), request.age());

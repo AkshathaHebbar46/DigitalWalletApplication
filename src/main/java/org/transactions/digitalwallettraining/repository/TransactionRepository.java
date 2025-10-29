@@ -1,10 +1,13 @@
 package org.transactions.digitalwallettraining.repository;
 
+import org.springframework.data.repository.query.Param;
 import org.transactions.digitalwallettraining.entity.TransactionEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.transactions.digitalwallettraining.entity.TransactionType;
+import org.transactions.digitalwallettraining.entity.WalletEntity;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,6 +29,12 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
     // Find transactions after a certain date
     List<TransactionEntity> findByTransactionDateAfter(java.time.LocalDateTime date);
 
-    TransactionEntity findByTransactionId(String transactionId);
+    Optional<TransactionEntity> findByTransactionId(String transactionId);
+
+    @Query("SELECT COALESCE(SUM(t.amount), 0) FROM TransactionEntity t WHERE t.wallet.id = :walletId AND t.type = 'DEBIT' AND t.transactionDate BETWEEN :start AND :end")
+    double sumDebitsByWalletAndDate(@Param("walletId") Long walletId,
+                                    @Param("start") LocalDateTime start,
+                                    @Param("end") LocalDateTime end);
+
 
 }
