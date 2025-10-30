@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.transactions.digitalwallettraining.entity.WalletEntity;
+import org.transactions.digitalwallettraining.entity.WalletStatus;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -32,4 +34,7 @@ public interface WalletRepository extends JpaRepository<WalletEntity, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM WalletEntity w WHERE w.id = :id")
     Optional<WalletEntity> findByIdForUpdate(@Param("id") Long id);
+
+
+
 }

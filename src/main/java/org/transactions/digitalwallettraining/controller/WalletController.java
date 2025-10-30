@@ -63,20 +63,21 @@ public class WalletController {
     @PostMapping("/transfer")
     public ResponseEntity<WalletTransactionResponseDTO> transferMoney(
             @RequestBody @Valid WalletTransferRequestDTO request) {
-        log.info("Received transfer request: {} → {} | amount={}", request.fromWalletId(), request.toWalletId(), request.amount());
+        log.info("Received transfer request: {} → {} | amount={}",
+                request.fromWalletId(), request.toWalletId(), request.amount());
+
         WalletTransactionResponseDTO response = walletService.transferMoney(
                 request.fromWalletId(),
                 request.toWalletId(),
-                new WalletTransactionRequestDTO(
-                        null,
-                        request.amount(),
-                        "DEBIT",
-                        "Transfer request"
-                )
+                request.amount()
         );
-        log.info("Transfer processed successfully between {} and {}", request.fromWalletId(), request.toWalletId());
+
+        log.info("Transfer processed successfully between {} and {}",
+                request.fromWalletId(), request.toWalletId());
+
         return ResponseEntity.status(201).body(response);
     }
+
 
     // 🔹 Get wallet details (includes user info, balance, and status)
     @GetMapping("/{walletId}")
@@ -94,20 +95,4 @@ public class WalletController {
         return ResponseEntity.ok(wallets);
     }
 
-
-    // 🔹 Activate a wallet
-    @PatchMapping("/{walletId}/activate")
-    public ResponseEntity<String> activateWallet(@PathVariable Long walletId) {
-        log.info("Activating wallet with id={}", walletId);
-        walletService.activateWallet(walletId);
-        return ResponseEntity.ok("Wallet activated successfully");
-    }
-
-    // 🔹 Deactivate a wallet
-    @PatchMapping("/{walletId}/deactivate")
-    public ResponseEntity<String> deactivateWallet(@PathVariable Long walletId) {
-        log.info("Deactivating wallet with id={}", walletId);
-        walletService.deactivateWallet(walletId);
-        return ResponseEntity.ok("Wallet deactivated successfully");
-    }
 }
