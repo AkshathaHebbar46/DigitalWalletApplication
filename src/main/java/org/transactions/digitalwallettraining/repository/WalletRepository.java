@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface WalletRepository extends JpaRepository<WalletEntity, Long> {
 
     // Find all wallets belonging to a specific user
-    Optional<WalletEntity> findByUserId(Long userId);
+    List<WalletEntity> findByUserId(Long userId);
     boolean existsByUserId(Long userId);
 
     // Find wallets with balance greater than a certain amount

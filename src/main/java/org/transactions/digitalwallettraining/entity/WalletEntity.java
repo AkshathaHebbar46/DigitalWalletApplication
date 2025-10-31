@@ -1,6 +1,8 @@
 package org.transactions.digitalwallettraining.entity;
 
 import jakarta.persistence.*;
+
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -26,7 +28,7 @@ public class WalletEntity {
     private Double dailySpent = 0.0;
 
     @Column(name = "last_transaction_date")
-    private LocalDate lastTransactionDate = LocalDate.now();
+    private LocalDateTime lastTransactionDate = LocalDateTime.now();
 
     // ✅ Freeze logic
     @Column(name = "frozen", nullable = false)
@@ -55,7 +57,7 @@ public class WalletEntity {
         this.balance = 0.0;
         this.dailySpent = 0.0;
         this.frozen = false;
-        this.lastTransactionDate = LocalDate.now();
+        this.lastTransactionDate = LocalDateTime.now();
     }
 
     public WalletEntity(UserEntity user, Double balance) {
@@ -63,7 +65,7 @@ public class WalletEntity {
         this.balance = balance != null && balance >= 0 ? balance : 0.0;
         this.dailySpent = 0.0;
         this.frozen = false;
-        this.lastTransactionDate = LocalDate.now();
+        this.lastTransactionDate = LocalDateTime.now();
     }
 
     // --- Helper Methods ---
@@ -81,14 +83,19 @@ public class WalletEntity {
      * ✅ Reset daily spent and frozen status if it's a new day.
      */
     public void resetDailyIfNewDay() {
-        LocalDate today = LocalDate.now();
-        if (lastTransactionDate == null || !lastTransactionDate.equals(today)) {
+        if (lastTransactionDate == null) {
+            lastTransactionDate = LocalDateTime.now();
+            return;
+        }
+
+        Duration duration = Duration.between(lastTransactionDate, LocalDateTime.now());
+        if (duration.toMinutes() >= 2) {  // reset every 2 minutes
             this.dailySpent = 0.0;
-            this.frozen = false;
-            this.frozenAt = null;
-            this.lastTransactionDate = today;
+            this.lastTransactionDate = LocalDateTime.now();
         }
     }
+
+
 
     /**
      * ✅ Automatically unfreeze and reset limit after 2 minutes.
@@ -103,7 +110,6 @@ public class WalletEntity {
             }
         }
     }
-
 
     // --- Getters & Setters ---
     public Long getId() { return id; }
@@ -125,9 +131,9 @@ public class WalletEntity {
 
     public void setDailySpent(Double dailySpent) { this.dailySpent = dailySpent; }
 
-    public LocalDate getLastTransactionDate() { return lastTransactionDate; }
+    public LocalDateTime getLastTransactionDate() { return lastTransactionDate; }
 
-    public void setLastTransactionDate(LocalDate lastTransactionDate) { this.lastTransactionDate = lastTransactionDate; }
+    public void setLastTransactionDate(LocalDateTime lastTransactionDate) { this.lastTransactionDate = lastTransactionDate; }
 
     public Boolean getFrozen() { return frozen; }
 

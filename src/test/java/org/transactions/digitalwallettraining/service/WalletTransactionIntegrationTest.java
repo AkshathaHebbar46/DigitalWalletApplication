@@ -5,8 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.annotation.Commit;
-import org.springframework.transaction.annotation.Transactional;
 import org.transactions.digitalwallettraining.dto.*;
 import org.transactions.digitalwallettraining.entity.UserEntity;
 import org.transactions.digitalwallettraining.repository.TransactionRepository;
@@ -149,7 +147,7 @@ class WalletTransactionIntegrationTest {
                 "Transfer from wallet " + transfer.fromWalletId()
         );
 
-        walletService.transferMoney(transfer.fromWalletId(), transfer.toWalletId(), request);
+        walletService.transferMoney(transfer.fromWalletId(), transfer.toWalletId(), request.amount());
 
         assertEquals(800.0, walletService.getBalance(wallet.getWalletId()));
         assertEquals(700.0, walletService.getBalance(wallet2.getWalletId()));
