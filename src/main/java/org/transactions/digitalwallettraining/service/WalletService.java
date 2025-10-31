@@ -10,13 +10,11 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.transactions.digitalwallettraining.dto.*;
 import org.transactions.digitalwallettraining.entity.*;
-import org.transactions.digitalwallettraining.exception.MaxRetryExceededException;
 import org.transactions.digitalwallettraining.repository.*;
 
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 
-import jakarta.persistence.OptimisticLockException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -126,9 +124,10 @@ public class WalletService {
     public WalletTransactionResponseDTO processTransaction(Long walletId, WalletTransactionRequestDTO request) {
         int attempt = 0;
 
-        while (true) {
+        while (attempt < MAX_RETRIES) {
             try {
                 attempt++;
+
                 WalletEntity wallet = walletRepository.findById(walletId)
                         .orElseThrow(() -> new IllegalArgumentException("Wallet not found"));
 
@@ -142,42 +141,48 @@ public class WalletService {
                     validateBalance(wallet, amount);
                     validateAndTrackDailyLimit(wallet, amount);
                     wallet.setBalance(wallet.getBalance() - amount);
-                    log.info("💰 Debit transaction: Wallet {} new balance ₹{}", wallet.getId(), wallet.getBalance());
                 } else {
                     wallet.setBalance(wallet.getBalance() + amount);
-                    log.info("💰 Credit transaction: Wallet {} new balance ₹{}", wallet.getId(), wallet.getBalance());
                 }
 
                 walletRepository.save(wallet);
 
                 TransactionEntity txn = new TransactionEntity(wallet, type, amount, request.description());
-                txn.setTransactionId(request.transactionId() != null
-                        ? request.transactionId() : UUID.randomUUID().toString());
+                txn.setTransactionId(
+                        request.transactionId() != null ? request.transactionId() : UUID.randomUUID().toString()
+                );
                 transactionRepository.save(txn);
 
-                log.info("✅ Transaction successful: [{}] ₹{} {} on wallet {} at {}",
-                        txn.getTransactionId(), txn.getAmount(), txn.getType(),
-                        wallet.getId(), txn.getTransactionDate());
+                log.info("✅ Transaction {} completed successfully for wallet {} (amount ₹{})",
+                        txn.getTransactionId(), walletId, amount);
 
                 return new WalletTransactionResponseDTO(
-                        txn.getTransactionId(), txn.getAmount(),
-                        type.name(), txn.getTransactionDate(), txn.getDescription());
+                        txn.getTransactionId(),
+                        txn.getAmount(),
+                        type.name(),
+                        txn.getTransactionDate(),
+                        txn.getDescription()
+                );
 
-            } catch (OptimisticLockException | ObjectOptimisticLockingFailureException | CannotAcquireLockException ex) {
-                if (attempt >= MAX_RETRIES) {
-                    log.error("🚫 Max retries exceeded for wallet {}. Failing transaction.", walletId);
-                    throw new MaxRetryExceededException("Max retry attempts exceeded for walletId=" + walletId, ex);
-                }
-                long backoff = BASE_BACKOFF_MS * (1L << (attempt - 1));
-                log.warn("⚠️ Retry {}/{} for wallet {} after {}ms due to lock conflict.",
-                        attempt, MAX_RETRIES, walletId, backoff);
+            } catch (ObjectOptimisticLockingFailureException | CannotAcquireLockException ex) {
+                log.warn("⚠️ Wallet {} busy (attempt {}/{}). Retrying...", walletId, attempt, MAX_RETRIES);
                 try {
-                    Thread.sleep(backoff);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                }
+                    Thread.sleep(BASE_BACKOFF_MS * (1L << (attempt - 1)));
+                } catch (InterruptedException ignored) { }
+            } catch (IllegalStateException | IllegalArgumentException ex) {
+                log.error("🚫 Transaction rejected for wallet {}: {}", walletId, ex.getMessage());
+                throw ex;
+            } catch (Exception ex) {
+                log.error("❌ Unexpected error processing wallet {}: {}", walletId, ex.getMessage());
+                throw ex;
             }
         }
+
+        // ⚠️ After MAX_RETRIES
+        log.error("🚫 Could not process wallet {} after {} retries. Please try again later.", walletId, MAX_RETRIES);
+
+        // Instead of throwing an error → return user-friendly message
+        throw new IllegalStateException("Please try again later. Wallet is busy processing another transaction.");
     }
 
     // ✅ Transfer money (same logic)

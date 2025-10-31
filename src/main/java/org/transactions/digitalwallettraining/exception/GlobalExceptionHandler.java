@@ -22,7 +22,7 @@ public class GlobalExceptionHandler {
     private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
-     * Handle validation errors (e.g. @NotNull, @Min, etc.)
+     * 🧩 Validation Errors (@NotNull, @Min, etc.)
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponseDTO> handleValidationExceptions(MethodArgumentNotValidException ex) {
@@ -34,100 +34,132 @@ public class GlobalExceptionHandler {
                 .map(err -> new ErrorResponseDTO.FieldError(err.getField(), err.getDefaultMessage()))
                 .collect(Collectors.toList());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.BAD_REQUEST.value());
-        errorResponse.setError("Validation Failed");
-        errorResponse.setFieldErrors(fieldErrors);
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "Validation Failed",
+                fieldErrors
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
     /**
-     * Handle Optimistic Locking failures (both JPA + Spring wrapped versions)
+     * 🔁 Optimistic Lock (Concurrent update conflict)
      */
     @ExceptionHandler({OptimisticLockException.class, ObjectOptimisticLockingFailureException.class})
     public ResponseEntity<ErrorResponseDTO> handleOptimisticLockException(Exception ex) {
-        logger.error("Optimistic lock failure detected: {}", ex.getMessage(), ex);
+        logger.warn("🔁 Optimistic lock detected: {}", ex.getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.CONFLICT.value());
-        errorResponse.setError("Concurrent update conflict. Please retry your transaction.");
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                "Concurrent update conflict. Please retry your transaction.",
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
     /**
-     * Handle Database Deadlocks or Lock Acquisition issues
+     * 🔒 Database Deadlocks or Lock Acquisition Issues
      */
     @ExceptionHandler(CannotAcquireLockException.class)
     public ResponseEntity<ErrorResponseDTO> handleDeadlock(CannotAcquireLockException ex) {
-        logger.error("Database deadlock detected: {}", ex.getMessage());
+        logger.warn("🔒 Deadlock detected: {}", ex.getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
-        errorResponse.setError("Database deadlock occurred. Please retry the transaction.");
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Database deadlock occurred. Please retry the transaction.",
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
+        return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
     }
 
     /**
-     * Handle Constraint violations or SQL integrity errors
+     * ⚠️ SQL Integrity Constraint Violation
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponseDTO> handleDataIntegrity(DataIntegrityViolationException ex) {
-        logger.error("Data integrity violation: {}", ex.getMessage());
+        logger.warn("⚠️ Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.BAD_REQUEST.value());
-        errorResponse.setError("Data integrity violation: " + ex.getMostSpecificCause().getMessage());
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "Data integrity violation: " + ex.getMostSpecificCause().getMessage(),
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
     /**
-     * Handle invalid business logic or parameters
+     * ⚠️ Invalid Input or Business Logic Error
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex) {
-        logger.warn("Invalid argument: {}", ex.getMessage());
+        logger.warn("⚠️ {}", ex.getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.BAD_REQUEST.value());
-        errorResponse.setError(ex.getMessage());
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                ex.getMessage(),
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
     /**
-     * Fallback - Handle any unexpected runtime exceptions
+     * 🚫 Wallet Frozen / Temporary Unavailable
      */
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponseDTO> handleAllExceptions(Exception ex) {
-        logger.error("Unexpected error occurred: {}", ex.getMessage(), ex);
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponseDTO> handleIllegalState(IllegalStateException ex) {
+        logger.warn("🚫 {}", ex.getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
-        errorResponse.setError("Unexpected error: " + ex.getMessage());
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.FORBIDDEN.value(), // 403 Forbidden
+                ex.getMessage(),
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
     }
 
+    /**
+     * 🔁 Max Retry Attempts Reached (Custom exception)
+     */
     @ExceptionHandler(MaxRetryExceededException.class)
     public ResponseEntity<ErrorResponseDTO> handleMaxRetryExceeded(MaxRetryExceededException ex) {
-        logger.error("Max retry attempts exceeded: {}", ex.getMessage(), ex);
+        logger.error("Max retry attempts exceeded: {}", ex.getMessage());
 
-        ErrorResponseDTO errorResponse = new ErrorResponseDTO();
-        errorResponse.setTimestamp(LocalDateTime.now());
-        errorResponse.setStatus(HttpStatus.CONFLICT.value());
-        errorResponse.setError("Max retry attempts exceeded due to concurrent modification. Please retry the request.");
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.CONFLICT.value(),
+                "Max retry attempts exceeded due to concurrent modification. Please retry the request.",
+                null
+        );
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 
+    /**
+     * 💥 Generic Unhandled Exception
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponseDTO> handleGeneric(Exception ex) {
+        logger.error("💥 Unexpected error: {}", ex.getMessage());
+
+        ErrorResponseDTO response = new ErrorResponseDTO(
+                LocalDateTime.now(),
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                "Something went wrong. Please try again later.",
+                null
+        );
+
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }
