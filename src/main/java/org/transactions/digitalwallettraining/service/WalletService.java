@@ -185,7 +185,7 @@ public class WalletService {
         throw new IllegalStateException("Please try again later. Wallet is busy processing another transaction.");
     }
 
-    // ✅ Transfer money (same logic)
+    // Transfer money
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public WalletTransactionResponseDTO transferMoney(Long fromWalletId, Long toWalletId, Double amount) {
         if (Objects.equals(fromWalletId, toWalletId))

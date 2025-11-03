@@ -5,7 +5,7 @@ import jakarta.validation.ConstraintValidatorContext;
 
 public class TransactionAmountValidator implements ConstraintValidator<ValidTransactionAmount, Double> {
 
-    private static final double MAX_AMOUNT = 100_000;
+    private static final double MAX_AMOUNT = 5_00_000;
 
     @Override
     public boolean isValid(Double amount, ConstraintValidatorContext context) {
